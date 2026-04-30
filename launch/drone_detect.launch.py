@@ -31,12 +31,6 @@ def generate_launch_description() -> LaunchDescription:
         description="Boxes topic shared between detect and pnp.",
     )
 
-    require_extrinsic_arg = DeclareLaunchArgument(
-        "require_extrinsic",
-        default_value="false",
-        description="Whether pnp must receive extrinsic before publishing output.",
-    )
-
     # YOLO/TensorRT 检测节点：输入图像，输出带框图像和 Float32MultiArray 检测框。
     detect_node = Node(
         package="drone_detect",
@@ -62,7 +56,6 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             {
                 "boxes_topic": LaunchConfiguration("boxes_topic"),
-                "require_extrinsic": LaunchConfiguration("require_extrinsic"),
                 # 使用参数内 camera->laser 旋转外参做方向补偿。
                 "use_static_laser_extrinsic": True,
             }
@@ -75,7 +68,6 @@ def generate_launch_description() -> LaunchDescription:
             engine_path_arg,
             image_topic_arg,
             boxes_topic_arg,
-            require_extrinsic_arg,
             detect_node,
             pnp_node,
         ]

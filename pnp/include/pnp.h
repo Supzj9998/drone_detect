@@ -65,7 +65,10 @@ class PnpNode : public rclcpp::Node {
   mutable std::mutex mutex_;
   cv::Mat camera_matrix_;
   cv::Mat dist_coeffs_;
-  bool require_extrinsic_{false};
+  cv::Matx33d r_laser_camera_{cv::Matx33d::eye()};
+  int target_class_id_{-1};
+  int autoaim_target_id_{0};
+  int autoaim_vision_mode_{gary_msgs::msg::AutoAIM::VISION_MODE_ARMOR};
   bool use_autoaim_status_{true};
   bool require_autoaim_status_{true};
   bool allow_shoot_{false};
