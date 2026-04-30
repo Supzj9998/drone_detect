@@ -15,7 +15,6 @@
   <depend>std_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>OpenCV</depend>
-  <depend>common_infer</depend>
   <depend>base_interface</depend>
   <depend>gary_msgs</depend>
 

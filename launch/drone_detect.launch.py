@@ -18,6 +18,18 @@ def generate_launch_description() -> LaunchDescription:
         description="TensorRT engine path for detect node.",
     )
 
+    yolo_type_arg = DeclareLaunchArgument(
+        "yolo_type",
+        default_value="v11",
+        description="YOLO model type for decoding. Only YOLOv11 is supported.",
+    )
+
+    trt_workspace_size_mb_arg = DeclareLaunchArgument(
+        "trt_workspace_size_mb",
+        default_value="1024",
+        description="TensorRT builder workspace size in MB.",
+    )
+
     image_topic_arg = DeclareLaunchArgument(
         "image_topic",
         default_value="image_raw",
@@ -41,6 +53,8 @@ def generate_launch_description() -> LaunchDescription:
             {
                 "model_path": LaunchConfiguration("model_path"),
                 "engine_path": LaunchConfiguration("engine_path"),
+                "trt_workspace_size_mb": LaunchConfiguration("trt_workspace_size_mb"),
+                "yolo_type": LaunchConfiguration("yolo_type"),
                 "image_topic": LaunchConfiguration("image_topic"),
                 "output_boxes_topic": LaunchConfiguration("boxes_topic"),
             }
@@ -66,6 +80,8 @@ def generate_launch_description() -> LaunchDescription:
         [
             model_path_arg,
             engine_path_arg,
+            yolo_type_arg,
+            trt_workspace_size_mb_arg,
             image_topic_arg,
             boxes_topic_arg,
             detect_node,
