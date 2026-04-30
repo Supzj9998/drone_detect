@@ -1,0 +1,84 @@
+#include "pnp.h"
+
+#include <algorithm>
+#include <cmath>
+#include <functional>
+#include <limits>
+#include <string>
+#include <vector>
+
+#include "opencv2/calib3d.hpp"
+#include "rclcpp_components/register_node_macro.hpp"
+
+namespace drone::pnp {
+namespace {
+constexpr size_t kBoxStride = 10U;
+constexpr double kRadToDeg = 57.29577951308232;
+
+cv::Matx33d rpyDegToMat(const std::vector<double>& rpy_deg) {
+  if (rpy_deg.size() != 3U) {
+    return cv::Matx33d::eye();
+  }
+
+  const double roll = rpy_deg[0] / kRadToDeg;
+  const double pitch = rpy_deg[1] / kRadToDeg;
+  const double yaw = rpy_deg[2] / kRadToDeg;
+  const double cr = std::cos(roll);
+  const double sr = std::sin(roll); const double cp = std::cos(pitch); const double sp = std::sin(pitch); const double cy = std::cos(yaw); const double sy = std::sin(yaw); return cv::Matx33d(cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr, sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr, -sp, cp * sr, cp * cr); } }  // namespace PnpNode::PnpNode(const rclcpp::NodeOptions& options) : Node("pnp_node", options) { target_class_id_ = declare_parameter<int>("target_class_id", -1); require_extrinsic_ = declare_parameter<bool>("require_extrinsic", false); use_autoaim_status_ = declare_parameter<bool>("use_autoaim_status", true); require_autoaim_status_ = declare_parameter<bool>("require_autoaim_status", true); allow_shoot_ = declare_parameter<bool>("allow_shoot", false); autoaim_target_id_ = declare_parameter<int>("autoaim_target_id", 0); autoaim_vision_mode_ = declare_parameter<int>("autoaim_vision_mode", gary_msgs::msg::AutoAIM::VISION_MODE_ARMOR); output_in_degrees_ = declare_parameter<bool>("output_in_degrees", true); input_is_undistorted_ = declare_parameter<bool>("input_is_undistorted", false); target_width_m_ = declare_parameter<double>("target_width_m", 0.072); target_height_m_ = declare_parameter<double>("target_height_m", 0.050); if (declare_parameter<bool>("use_static_laser_extrinsic", true)) { r_laser_camera_ = rpyDegToMat(declare_parameter<std::vector<double>>( "laser_rpy_deg", std::vector<double>{0.0, 0.0, 0.0})); extrinsic_ready_ = true; } polar_pub_ = create_publisher<base_interface::msg::Polar3f>( declare_parameter<std::string>("output_topic", "pnp/polar"), 10); if (declare_parameter<bool>("publish_autoaim", true)) { autoaim_pub_ = create_publisher<gary_msgs::msg::AutoAIM>( declare_parameter<std::string>("autoaim_topic", "/autoaim/target"), 10); } boxes_sub_ = create_subscription<std_msgs::msg::Float32MultiArray>( declare_parameter<std::string>("boxes_topic", "detect/boxes"), rclcpp::SensorDataQoS(), std::bind(&PnpNode::boxesCallback, this, std::placeholders::_1)); camera_info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>( declare_parameter<std::string>("camera_info_topic", "camera_info"), rclcpp::SensorDataQoS(), std::bind(&PnpNode::cameraInfoCallback, this, std::placeholders::_1)); if (use_autoaim_status_) { autoaim_status_sub_ = create_subscription<gary_msgs::msg::AutoAIM>( declare_parameter<std::string>("autoaim_status_topic", "/autoaim/status"), rclcpp::SensorDataQoS(), std::bind(&PnpNode::autoaimStatusCallback, this, std::placeholders::_1)); } } void PnpNode::boxesCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) { size_t best = 0U; SolverState state; cv::Vec3d tvec; if (!findBestBox(*msg, best) || !getSolverState(state) || !solveBox(*msg, best, state, tvec)) { return; } publishResult(tvec, state); } bool PnpNode::findBestBox(const std_msgs::msg::Float32MultiArray& msg, size_t& best) const { if (msg.data.empty() || msg.data.size() % kBoxStride != 0U) { return false; } detect publishes fixed 10-float boxes; choose the highest-score target class. best = msg.data.size(); float best_score = -std::numeric_limits<float>::infinity(); for (size_t i = 0; i < msg.data.size(); i += kBoxStride) { const int class_id = static_cast<int>(msg.data[i]); const float score = msg.data[i + 1]; if ((target_class_id_ < 0 || class_id == target_class_id_) && score > best_score) { best_score = score; best = i; } } return best != msg.data.size(); } bool PnpNode::getSolverState(SolverState& state) const { std::lock_guard<std::mutex> lock(mutex_); if (!camera_info_ready_ || camera_matrix_.empty() || (require_extrinsic_ && !extrinsic_ready_) || (use_autoaim_status_ && require_autoaim_status_ && !autoaim_status_ready_)) { return false; } OpenCV solvePnP can run outside the lock; callbacks may update these later. state.camera_matrix = camera_matrix_.clone(); state.dist_coeffs = dist_coeffs_.clone(); state.r_laser_camera = r_laser_camera_; state.rotate_to_laser = extrinsic_ready_; state.pitch = current_pitch_rad_; state.yaw = current_yaw_rad_; return true;
+}
+
+bool PnpNode::solveBox(const std_msgs::msg::Float32MultiArray& msg, size_t box,
+                       const SolverState& state, cv::Vec3d& tvec) const {
+  const float half_w = static_cast<float>(target_width_m_ * 0.5);
+  const float half_h = static_cast<float>(target_height_m_ * 0.5);
+
+  // Object points use the real target size; image points come from detect's four corners.
+  const std::vector<cv::Point3f> object_points{
+      {-half_w, -half_h, 0.0F}, {half_w, -half_h, 0.0F},
+      {half_w, half_h, 0.0F}, {-half_w, half_h, 0.0F}};
+  const std::vector<cv::Point2f> image_points{
+      {msg.data[box + 2], msg.data[box + 3]},
+      {msg.data[box + 4], msg.data[box + 5]},
+      {msg.data[box + 6], msg.data[box + 7]},
+      {msg.data[box + 8], msg.data[box + 9]}};
+
+  cv::Vec3d rvec;
+  if (!cv::solvePnP(object_points, image_points, state.camera_matrix, state.dist_coeffs, rvec, tvec,
+                    false, cv::SOLVEPNP_ITERATIVE)) {
+    return false;
+  }
+  if (state.rotate_to_laser) {
+    tvec = state.r_laser_camera * tvec;
+  }
+  return true;
+}
+
+void PnpNode::publishResult(const cv::Vec3d& tvec, const SolverState& state) {
+  const double x = tvec[0];
+  const double y = tvec[1];
+  const double z = tvec[2];
+
+  // Camera frame: x right, y down, z forward. Yaw/pitch match gimbal control direction.
+  const double distance = std::sqrt(x * x + y * y + z * z); const double base_yaw = -std::atan2(x, z); const double base_pitch = -std::atan2(-y, std::sqrt(x * x + z * z)); double yaw = base_yaw; double pitch = base_pitch; if (use_autoaim_status_) { yaw += state.yaw; pitch += state.pitch; } base_interface::msg::Polar3f polar; polar.yaw = static_cast<float>(output_in_degrees_ ? yaw * kRadToDeg : yaw); polar.pitch = static_cast<float>(output_in_degrees_ ? pitch * kRadToDeg : pitch); polar.distance = static_cast<float>(distance); polar_pub_->publish(polar); // AutoAIM keeps radians and preserves the previous doubled visual-angle convention. if (autoaim_pub_) { gary_msgs::msg::AutoAIM autoaim; autoaim.header.stamp = get_clock()->now(); autoaim.yaw = static_cast<float>(base_yaw * 2.0 + (use_autoaim_status_ ? state.yaw : 0.0F)); autoaim.pitch = static_cast<float>(base_pitch * 2.0 + (use_autoaim_status_ ? state.pitch : 0.0F)); autoaim.target_id = static_cast<uint8_t>(std::clamp(autoaim_target_id_, 0, 7)); autoaim.target_distance = static_cast<float>(distance); autoaim.vision_mode = static_cast<uint8_t>(std::clamp(autoaim_vision_mode_, 1, 4)); autoaim.shoot_command = allow_shoot_ ? gary_msgs::msg::AutoAIM::ALLOW_SHOOT : gary_msgs::msg::AutoAIM::CEASE_FIRE; autoaim_pub_->publish(autoaim); } } void PnpNode::autoaimStatusCallback(const gary_msgs::msg::AutoAIM::SharedPtr msg) { std::lock_guard<std::mutex> lock(mutex_); current_pitch_rad_ = msg->pitch; current_yaw_rad_ = msg->yaw; autoaim_status_ready_ = true; }
+void PnpNode::cameraInfoCallback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
+  if (msg->k[0] <= 0.0 || msg->k[4] <= 0.0) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  camera_matrix_ = cv::Mat(3, 3, CV_64F);
+  for (int i = 0; i < 9; ++i) {
+    camera_matrix_.at<double>(i / 3, i % 3) = msg->k[static_cast<size_t>(i)];
+  }
+  dist_coeffs_ = cv::Mat::zeros(static_cast<int>(msg->d.size()), 1, CV_64F);
+  if (!input_is_undistorted_) {
+    for (size_t i = 0; i < msg->d.size(); ++i) {
+      dist_coeffs_.at<double>(static_cast<int>(i), 0) = msg->d[i];
+    }
+  }
+  camera_info_ready_ = true;
+}
+
+}  // namespace drone::pnp
+
+RCLCPP_COMPONENTS_REGISTER_NODE(drone::pnp::PnpNode)
