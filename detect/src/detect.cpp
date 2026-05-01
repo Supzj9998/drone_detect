@@ -1,9 +1,6 @@
 #include "detect.h"
 
-#include <algorithm>
-#include <cctype>
 #include <functional>
-#include <stdexcept>
 #include <string>
 
 #include "cv_bridge/cv_bridge.hpp"
@@ -14,49 +11,26 @@
 
 namespace drone::detect {
 
-namespace {
-
-    std::string toLower(std::string value)
-    {
-        std::transform(value.begin(), value.end(), value.begin(),
-                       [](unsigned char c) {
-                           return static_cast<char>(std::tolower(c));
-                       });
-        return value;
-    }
-
-    ::yolo::Type parseYoloType(const std::string& name)
-    {
-        const std::string type_name = toLower(name);
-        if (type_name == "v11" || type_name == "yolov11" ||
-            type_name == "yolo11") {
-            return ::yolo::Type::V11;
-        }
-
-        throw std::invalid_argument(
-            "Only YOLOv11 is supported, got yolo_type: " + name);
-    }
-
-}  // namespace
-
 Detect::Detect(const rclcpp::NodeOptions& options)
     : Node("detect_node", options)
 {
+    // 读取参数和模型路径
     const auto engine_path = declare_parameter<std::string>(
         "engine_path", "model/TensorRT/best.engine");
     const auto model_path = declare_parameter<std::string>(
         "model_path", "model/ONNX/best.onnx");
+    // 读取TensorRT构建engine使用的workspace大小
     const auto workspace_size_mb =
         declare_parameter<int>("trt_workspace_size_mb", 1024);
-    const auto yolo_type_name =
-        declare_parameter<std::string>("yolo_type", "v11");
-    show_debug_image = declare_parameter<bool>("show_debug_image", true);
+
     debug_window_name =
         declare_parameter<std::string>("debug_window_name", "debug");
 
-    const auto yolo_type = parseYoloType(yolo_type_name);
-    RCLCPP_INFO(get_logger(), "Using YOLO type: %s (decoder: %s)",
-                yolo_type_name.c_str(), ::yolo::type_name(yolo_type));
+    // 指定yolo类型
+    const auto yolo_type = ::yolo::Type::V11;
+    RCLCPP_INFO(get_logger(), "Using YOLO decoder: %s",
+                ::yolo::type_name(yolo_type));
+    // 加载YOLO/TensorRT推理引擎
     yolo = ::yolo::load_or_build(
         engine_path, model_path, yolo_type,
         static_cast<float>(

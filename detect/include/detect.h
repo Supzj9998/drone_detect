@@ -39,10 +39,10 @@ private:
     rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr
         boxes_pub;
 
-    bool        show_debug_image{true};
-    std::string debug_window_name{"debug"};
+    // debug开关
+    bool        show_debug_image = true;
+    std::string debug_window_name = "debug";
 };
-
 }  // namespace drone::detect
 
 #endif
