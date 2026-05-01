@@ -3,7 +3,6 @@
 
 #include <memory>
 #include <string>
-
 #include "BaseInfer.hpp"
 #include "opencv2/core.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -40,8 +39,7 @@ private:
         boxes_pub;
 
     // debug开关
-    bool        show_debug_image = true;
-    std::string debug_window_name = "debug";
+    bool show_debug_image = true;
 };
 }  // namespace drone::detect
 

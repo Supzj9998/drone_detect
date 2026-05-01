@@ -23,9 +23,6 @@ Detect::Detect(const rclcpp::NodeOptions& options)
     const auto workspace_size_mb =
         declare_parameter<int>("trt_workspace_size_mb", 1024);
 
-    debug_window_name =
-        declare_parameter<std::string>("debug_window_name", "debug");
-
     // 指定yolo类型
     const auto yolo_type = ::yolo::Type::V11;
     RCLCPP_INFO(get_logger(), "Using YOLO decoder: %s",
@@ -59,14 +56,14 @@ Detect::Detect(const rclcpp::NodeOptions& options)
         std::bind(&Detect::callback, this, std::placeholders::_1));
 
     if (show_debug_image) {
-        cv::namedWindow(debug_window_name, cv::WINDOW_NORMAL);
+        cv::namedWindow("yolo_debug", cv::WINDOW_NORMAL);
     }
 }
 
 Detect::~Detect()
 {
     if (show_debug_image) {
-        cv::destroyWindow(debug_window_name);
+        cv::destroyWindow("yolo_debug");
     }
 }
 
@@ -95,7 +92,7 @@ void Detect::callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
     drawDetections(cv_ptr->image, detections);
     // OpenCV调试显示：每帧只刷新一次，避免多目标时重复阻塞。
     if (show_debug_image) {
-        cv::imshow(debug_window_name, cv_ptr->image);
+        cv::imshow("yolo_debug", cv_ptr->image);
         cv::waitKey(1);
     }
     // 发布画框后的图像
@@ -107,9 +104,11 @@ void Detect::callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
 
 void Detect::publishDetections(const yolo::BoxArray& detections) const
 {
+    // 创建ros2消息
     std_msgs::msg::Float32MultiArray msg;
+    // 提前预留容量
     msg.data.reserve(detections.size() * 10U);
-
+    // yolo框转换ros2消息
     for (const auto& box : detections) {
         msg.data.insert(msg.data.end(),
                         {static_cast<float>(box.class_label),
@@ -118,6 +117,7 @@ void Detect::publishDetections(const yolo::BoxArray& detections) const
                          box.bottom});
     }
 
+    // 发布消息
     boxes_pub->publish(msg);
 }
 

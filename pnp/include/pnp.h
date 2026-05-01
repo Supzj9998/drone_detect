@@ -3,7 +3,6 @@
 
 #include <cstddef>
 #include <mutex>
-
 #include "base_interface/msg/polar3f.hpp"
 #include "gary_msgs/msg/auto_aim.hpp"
 #include "opencv2/core.hpp"
@@ -74,33 +73,33 @@ private:
     cv::Mat            dist_coeffs_;
     cv::Matx33d        r_laser_camera_{cv::Matx33d::eye()};
     // 类别筛选
-    int target_class_id_{-1};
+    int target_class_id_ = -1;
     // 发布到AutoAIM消息里的id
-    int autoaim_target_id_{0};
+    int autoaim_target_id_ = 0;
     // 发布到AutoAIM消息里的视觉模式
-    int autoaim_vision_mode_{gary_msgs::msg::AutoAIM::VISION_MODE_ARMOR};
+    int autoaim_vision_mode_ = gary_msgs::msg::AutoAIM::VISION_MODE_ARMOR;
     // 是否订阅并使用当前云台角
-    bool use_autoaim_status_{true};
+    bool use_autoaim_status_ = true;
     // 是否强制要求先收到当前云台角再进行pnp
-    bool require_autoaim_status_{true};
+    bool require_autoaim_status_ = true;
     // 是否允许发射
-    bool allow_shoot_{false};
+    bool allow_shoot_ = false;
     // 控制发布yaw/pitch的单位，true:角度制，false:弧度制
-    bool output_in_degrees_{true};
+    bool output_in_degrees_ = true;
     // 表示输入检测框来自的图像是否已经去畸变
-    bool input_is_undistorted_{false};
+    bool input_is_undistorted_ = false;
     // 有没有相机内参
-    bool camera_info_ready_{false};
+    bool camera_info_ready_ = false;
     // 有没有启用外参旋转
-    bool extrinsic_ready_{false};
+    bool extrinsic_ready_ = false;
     // 有没有收到云台pitch/yaw状态
-    bool autoaim_status_ready_{false};
+    bool autoaim_status_ready_ = false;
     // 用的目标真实尺寸
-    double target_width_m_{0.072};
-    double target_height_m_{0.050};
+    double target_width_m_ = 0.072;
+    double target_height_m_ = 0.050;
     // 当前云台pitch和yaw
-    float current_pitch_rad_{0.0F};
-    float current_yaw_rad_{0.0F};
+    float current_pitch_rad_ = 0.0F;
+    float current_yaw_rad_ = 0.0F;
 };
 
 }  // namespace drone::pnp

@@ -30,13 +30,6 @@ def generate_launch_description() -> LaunchDescription:
         description="Input image topic for detect node.",
     )
 
-    # detect 发布的 boxes_topic 会被 pnp 订阅，是两个节点之间的核心数据通道。
-    boxes_topic_arg = DeclareLaunchArgument(
-        "boxes_topic",
-        default_value="detect/boxes",
-        description="Boxes topic shared between detect and pnp.",
-    )
-
     # YOLO/TensorRT 检测节点：输入图像，输出带框图像和 Float32MultiArray 检测框。
     detect_node = Node(
         package="drone_detect",
@@ -49,7 +42,6 @@ def generate_launch_description() -> LaunchDescription:
                 "engine_path": LaunchConfiguration("engine_path"),
                 "trt_workspace_size_mb": LaunchConfiguration("trt_workspace_size_mb"),
                 "image_topic": LaunchConfiguration("image_topic"),
-                "output_boxes_topic": LaunchConfiguration("boxes_topic"),
             }
         ],
     )
@@ -60,13 +52,6 @@ def generate_launch_description() -> LaunchDescription:
         executable="pnp_node",
         name="pnp_node",
         output="screen",
-        parameters=[
-            {
-                "boxes_topic": LaunchConfiguration("boxes_topic"),
-                # 使用参数内 camera->laser 旋转外参做方向补偿。
-                "use_static_laser_extrinsic": True,
-            }
-        ],
     )
 
     return LaunchDescription(
@@ -75,7 +60,6 @@ def generate_launch_description() -> LaunchDescription:
             engine_path_arg,
             trt_workspace_size_mb_arg,
             image_topic_arg,
-            boxes_topic_arg,
             detect_node,
             pnp_node,
         ]
