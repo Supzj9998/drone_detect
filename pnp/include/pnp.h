@@ -71,7 +71,7 @@ private:
     mutable std::mutex mutex_;
     cv::Mat            camera_matrix_;
     cv::Mat            dist_coeffs_;
-    cv::Matx33d        r_laser_camera_{cv::Matx33d::eye()};
+    cv::Matx33d        r_laser_camera_ = cv::Matx33d::eye();
     // 类别筛选
     int target_class_id_ = -1;
     // 发布到AutoAIM消息里的id

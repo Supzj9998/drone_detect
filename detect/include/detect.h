@@ -1,6 +1,7 @@
 #ifndef DRONE_DETECT_DETECT_H
 #define DRONE_DETECT_DETECT_H
 
+#include <array>
 #include <memory>
 #include <string>
 #include "BaseInfer.hpp"
@@ -24,6 +25,9 @@ private:
     // 给yolo的检测结果画框
     void drawDetections(cv::Mat&              image,
                         const yolo::BoxArray& detections) const;
+
+    std::array<float, 9> processDetections(
+        const yolo::BoxArray& detections, cv::Mat& image);
     // 将yolo的结果发布
     void publishDetections(const yolo::BoxArray& detections) const;
 
