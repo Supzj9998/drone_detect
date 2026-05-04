@@ -91,12 +91,13 @@ void Detect::callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
                            cv_ptr->image.rows);
     // yolo推理
     const auto detections = yolo->forward(image);
+    // 处理检测结果
+    const auto processed_detection =
+        processDetections(detections, cv_ptr->image);
     // 发布检测框
-    publishDetections(detections);
+    publishDetections(processed_detection);
     // 在图像上画框
     drawDetections(cv_ptr->image, detections);
-    // 处理检测结果
-    processDetections(detections, cv_ptr->image);
     // OpenCV调试显示：每帧只刷新一次，避免多目标时重复阻塞。
     if (show_debug_image) {
         cv::imshow("yolo_debug", cv_ptr->image);
@@ -119,12 +120,15 @@ std::array<float, 9> Detect::processDetections(
         return result;
     }
 
-    // 找出置信度最高的检测框
+    // 找出置信度大于0.6且最高的检测框
     const auto best = std::max_element(
         detections.begin(), detections.end(),
         [](const yolo::Box& lhs, const yolo::Box& rhs) {
             return lhs.confidence < rhs.confidence;
         });
+    if (best->confidence <= 0.6F) {
+        return result;
+    }
 
     // 取最高置信度框在图像中的ROI区域
     const int left = std::clamp(static_cast<int>(best->left), 0, image.cols);
@@ -306,20 +310,14 @@ std::array<float, 9> Detect::processDetections(
     return result;
 }
 
-void Detect::publishDetections(const yolo::BoxArray& detections) const
+void Detect::publishDetections(const std::array<float, 9>& detection) const
 {
     // 创建ros2消息
     std_msgs::msg::Float32MultiArray msg;
     // 提前预留容量
-    msg.data.reserve(detections.size() * 10U);
-    // yolo框转换ros2消息
-    for (const auto& box : detections) {
-        msg.data.insert(msg.data.end(),
-                        {static_cast<float>(box.class_label),
-                         box.confidence, box.left, box.top, box.right,
-                         box.top, box.right, box.bottom, box.left,
-                         box.bottom});
-    }
+    msg.data.reserve(detection.size());
+    // 传统视觉处理后的pnp点和配对结果转换ros2消息
+    msg.data.insert(msg.data.end(), detection.begin(), detection.end());
 
     // 发布消息
     boxes_pub->publish(msg);

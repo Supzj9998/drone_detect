@@ -29,7 +29,7 @@ private:
     std::array<float, 9> processDetections(
         const yolo::BoxArray& detections, cv::Mat& image);
     // 将yolo的结果发布
-    void publishDetections(const yolo::BoxArray& detections) const;
+    void publishDetections(const std::array<float, 9>& detection) const;
 
     // yolo推理器
     std::shared_ptr<tdt_radar::Infer<yolo::BoxArray>> yolo;
