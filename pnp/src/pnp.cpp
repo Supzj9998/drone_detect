@@ -4,7 +4,6 @@
 #include <cmath>
 #include <functional>
 #include <limits>
-#include <string>
 #include <vector>
 
 #include "opencv2/calib3d.hpp"
@@ -12,86 +11,41 @@
 
 namespace drone::pnp {
 namespace {
-    // 一个检测框占10个float
-    constexpr size_t kBoxStride = 10U;
+    // detect发布4个pnp点和1个配对结果，共9个float
+    constexpr size_t kDetectionStride = 9U;
+    constexpr size_t kPairResultIndex = 8U;
     // 弧度转角度系数
-    constexpr double kRadToDeg = 57.29577951308232;
-
-    // 角度转换成旋转矩阵
-    cv::Matx33d rpyDegToMat(const std::vector<double>& rpy_deg)
-    {
-        if (rpy_deg.size() != 3U) {
-            return cv::Matx33d::eye();
-        }
-
-        const double roll = rpy_deg[0] / kRadToDeg;
-        const double pitch = rpy_deg[1] / kRadToDeg;
-        const double yaw = rpy_deg[2] / kRadToDeg;
-        const double cr = std::cos(roll);
-        const double sr = std::sin(roll);
-        const double cp = std::cos(pitch);
-        const double sp = std::sin(pitch);
-        const double cy = std::cos(yaw);
-        const double sy = std::sin(yaw);
-        return cv::Matx33d(cy * cp, cy * sp * sr - sy * cr,
-                           cy * sp * cr + sy * sr, sy * cp,
-                           sy * sp * sr + cy * cr, sy * sp * cr - cy * sr,
-                           -sp, cp * sr, cp * cr);
-    }
+    constexpr double          kRadToDeg = 57.29577951308232;
+    constexpr const char*     kPolarTopic = "pnp/polar";
+    constexpr const char*     kAutoaimTopic = "/autoaim/target";
+    constexpr const char*     kBoxesTopic = "detect/boxes";
+    constexpr const char*     kCameraInfoTopic = "camera_info";
+    constexpr const char*     kAutoaimStatusTopic = "/autoaim/status";
 
 }  // namespace
 
 PnpNode::PnpNode(const rclcpp::NodeOptions& options)
     : Node("pnp_node", options)
 {
-    target_class_id_ = declare_parameter<int>("target_class_id", -1);
-    use_autoaim_status_ =
-        declare_parameter<bool>("use_autoaim_status", true);
-    require_autoaim_status_ =
-        declare_parameter<bool>("require_autoaim_status", true);
-    allow_shoot_ = declare_parameter<bool>("allow_shoot", false);
-    autoaim_target_id_ = declare_parameter<int>("autoaim_target_id", 0);
-    autoaim_vision_mode_ = declare_parameter<int>(
-        "autoaim_vision_mode", gary_msgs::msg::AutoAIM::VISION_MODE_ARMOR);
-    output_in_degrees_ = declare_parameter<bool>("output_in_degrees", true);
-    input_is_undistorted_ =
-        declare_parameter<bool>("input_is_undistorted", false);
-    target_width_m_ = declare_parameter<double>("target_width_m", 0.072);
-    target_height_m_ = declare_parameter<double>("target_height_m", 0.050);
-    if (declare_parameter<bool>("use_static_laser_extrinsic", true)) {
-        r_laser_camera_ =
-            rpyDegToMat(declare_parameter<std::vector<double>>(
-                "laser_rpy_deg", std::vector<double>{0.0, 0.0, 0.0}));
-        extrinsic_ready_ = true;
-    }
-
     // pnp发布器
-    polar_pub_ = create_publisher<base_interface::msg::Polar3f>(
-        declare_parameter<std::string>("output_topic", "pnp/polar"), 10);
-    if (declare_parameter<bool>("publish_autoaim", true)) {
-        // autoaim发布器
-        autoaim_pub_ = create_publisher<gary_msgs::msg::AutoAIM>(
-            declare_parameter<std::string>("autoaim_topic",
-                                           "/autoaim/target"),
-            10);
-    }
+    polar_pub_ =
+        create_publisher<base_interface::msg::Polar3f>(kPolarTopic, 10);
+    // autoaim发布器
+    autoaim_pub_ =
+        create_publisher<gary_msgs::msg::AutoAIM>(kAutoaimTopic, 10);
     // 检测框话题订阅器
     boxes_sub_ = create_subscription<std_msgs::msg::Float32MultiArray>(
-        declare_parameter<std::string>("boxes_topic", "detect/boxes"),
-        rclcpp::SensorDataQoS(),
+        kBoxesTopic, rclcpp::SensorDataQoS(),
         std::bind(&PnpNode::boxesCallback, this, std::placeholders::_1));
     // 相机内参话题订阅器
     camera_info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
-        declare_parameter<std::string>("camera_info_topic", "camera_info"),
-        rclcpp::SensorDataQoS(),
+        kCameraInfoTopic, rclcpp::SensorDataQoS(),
         std::bind(&PnpNode::cameraInfoCallback, this,
                   std::placeholders::_1));
     if (use_autoaim_status_) {
         // 云台当前状态订阅器
         autoaim_status_sub_ = create_subscription<gary_msgs::msg::AutoAIM>(
-            declare_parameter<std::string>("autoaim_status_topic",
-                                           "/autoaim/status"),
-            rclcpp::SensorDataQoS(),
+            kAutoaimStatusTopic, rclcpp::SensorDataQoS(),
             std::bind(&PnpNode::autoaimStatusCallback, this,
                       std::placeholders::_1));
     }
@@ -101,45 +55,16 @@ PnpNode::PnpNode(const rclcpp::NodeOptions& options)
 void PnpNode::boxesCallback(
     const std_msgs::msg::Float32MultiArray::SharedPtr msg)
 {
-    size_t      best = 0U;
     SolverState state;
     cv::Vec3d   tvec;
-    // 准备保存最佳框起始下标
-    if (!findBestBox(*msg, best) || !getSolverState(state) ||
-        !solveBox(*msg, best, state, tvec)) {
+    // 依次执行三个函数，如有执行失败的直接返回
+    if (!getSolverState(state) || !solveBox(*msg, state, tvec)) {
         return;
     }
     // 解算成功后发布结果
     publishResult(tvec, state);
 }
 
-// 找最佳框
-bool PnpNode::findBestBox(const std_msgs::msg::Float32MultiArray& msg,
-                          size_t& best) const
-{
-    if (msg.data.empty() || msg.data.size() % kBoxStride != 0U) {
-        return false;
-    }
-    // Detect publishes fixed 10-float boxes; choose the highest-score
-    // target class.
-    best = msg.data.size();
-    float best_score = -std::numeric_limits<float>::infinity();
-    // 每10个float遍历一次
-    for (size_t i = 0; i < msg.data.size(); i += kBoxStride) {
-        // 取类别和置信度
-        const int   class_id = static_cast<int>(msg.data[i]);
-        const float score = msg.data[i + 1];
-        // 取符合类别且置信度更高的框
-        if ((target_class_id_ < 0 || class_id == target_class_id_) &&
-            score > best_score) {
-            best_score = score;
-            best = i;
-        }
-    }
-    return best != msg.data.size();
-}
-
-//
 bool PnpNode::getSolverState(SolverState& state) const
 {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -148,24 +73,40 @@ bool PnpNode::getSolverState(SolverState& state) const
          !autoaim_status_ready_)) {
         return false;
     }
-    // OpenCV solvePnP can run outside the lock; callbacks may update these
-    // later.
+
     state.camera_matrix = camera_matrix_.clone();
     state.dist_coeffs = dist_coeffs_.clone();
-    state.r_laser_camera = r_laser_camera_;
-    state.rotate_to_laser = extrinsic_ready_;
     state.pitch = current_pitch_rad_;
     state.yaw = current_yaw_rad_;
     return true;
 }
 
-// 用最佳检测框做pnp
+// 用detect发布的4个角点做pnp
 bool PnpNode::solveBox(const std_msgs::msg::Float32MultiArray& msg,
-                       size_t box, const SolverState& state,
-                       cv::Vec3d& tvec) const
+                       const SolverState& state, cv::Vec3d& tvec) const
 {
-    const float half_w = static_cast<float>(target_width_m_ * 0.5);
-    const float half_h = static_cast<float>(target_height_m_ * 0.5);
+    if (msg.data.size() != kDetectionStride ||
+        msg.data[kPairResultIndex] < 0.0F) {
+        return false;
+    }
+
+    const float pair_result = msg.data[kPairResultIndex];
+    double      target_width_m = 0.0;
+    double      target_height_m = 0.0;
+    if (pair_result == 3.0F) {
+        target_width_m = target_3_width_m_;
+        target_height_m = target_3_height_m_;
+    }
+    else if (pair_result == 4.0F) {
+        target_width_m = target_4_width_m_;
+        target_height_m = target_4_height_m_;
+    }
+    else {
+        return false;
+    }
+
+    const float half_w = static_cast<float>(target_width_m * 0.5);
+    const float half_h = static_cast<float>(target_height_m * 0.5);
 
     // 定义物体坐标系
     const std::vector<cv::Point3f> object_points{{-half_w, -half_h, 0.0F},
@@ -174,10 +115,10 @@ bool PnpNode::solveBox(const std_msgs::msg::Float32MultiArray& msg,
                                                  {-half_w, half_h, 0.0F}};
     // 定义图像上的四个角点
     const std::vector<cv::Point2f> image_points{
-        {msg.data[box + 2], msg.data[box + 3]},
-        {msg.data[box + 4], msg.data[box + 5]},
-        {msg.data[box + 6], msg.data[box + 7]},
-        {msg.data[box + 8], msg.data[box + 9]}};
+        {msg.data[0], msg.data[1]},
+        {msg.data[2], msg.data[3]},
+        {msg.data[4], msg.data[5]},
+        {msg.data[6], msg.data[7]}};
 
     cv::Vec3d rvec;
     // pnp解算
@@ -185,9 +126,6 @@ bool PnpNode::solveBox(const std_msgs::msg::Float32MultiArray& msg,
                       state.dist_coeffs, rvec, tvec, false,
                       cv::SOLVEPNP_ITERATIVE)) {
         return false;
-    }
-    if (state.rotate_to_laser) {
-        tvec = state.r_laser_camera * tvec;
     }
     return true;
 }

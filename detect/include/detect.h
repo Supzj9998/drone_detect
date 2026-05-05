@@ -1,9 +1,9 @@
 #ifndef DRONE_DETECT_DETECT_H
 #define DRONE_DETECT_DETECT_H
 
+#include <array>
 #include <memory>
 #include <string>
-
 #include "BaseInfer.hpp"
 #include "opencv2/core.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -25,8 +25,11 @@ private:
     // 给yolo的检测结果画框
     void drawDetections(cv::Mat&              image,
                         const yolo::BoxArray& detections) const;
+
+    std::array<float, 9> processDetections(
+        const yolo::BoxArray& detections, cv::Mat& image);
     // 将yolo的结果发布
-    void publishDetections(const yolo::BoxArray& detections) const;
+    void publishDetections(const std::array<float, 9>& detection) const;
 
     // yolo推理器
     std::shared_ptr<tdt_radar::Infer<yolo::BoxArray>> yolo;
@@ -39,10 +42,9 @@ private:
     rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr
         boxes_pub;
 
-    bool        show_debug_image{true};
-    std::string debug_window_name{"debug"};
+    // debug开关
+    bool show_debug_image = true;
 };
-
 }  // namespace drone::detect
 
 #endif
