@@ -1,5 +1,5 @@
-#ifndef DRONE_DETECT_DETECT_H
-#define DRONE_DETECT_DETECT_H
+#ifndef DRONE_DETECT_MODEL_DETECTER_H
+#define DRONE_DETECT_MODEL_DETECTER_H
 
 #include <array>
 #include <memory>

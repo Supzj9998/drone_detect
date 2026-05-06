@@ -1,4 +1,4 @@
-#include "detect.h"
+#include "model_detecter.h"
 
 #include <algorithm>
 #include <array>
@@ -17,7 +17,7 @@
 namespace drone::detect {
 
 Detect::Detect(const rclcpp::NodeOptions& options)
-    : Node("detect_node", options)
+    : Node("model_detecter_node", options)
 {
     // 读取参数和模型路径
     const auto engine_path = declare_parameter<std::string>(
@@ -47,12 +47,12 @@ Detect::Detect(const rclcpp::NodeOptions& options)
     // yolo检测后的图像发布者
     image_pub = create_publisher<sensor_msgs::msg::Image>(
         declare_parameter<std::string>("output_image_topic",
-                                       "detect/image_with_boxes"),
+                                       "model_detecter/image_with_boxes"),
         10);
     // yolo检测框发布者
     boxes_pub = create_publisher<std_msgs::msg::Float32MultiArray>(
         declare_parameter<std::string>("output_boxes_topic",
-                                       "detect/boxes"),
+                                       "model_detecter/boxes"),
         10);
     // 原始图像订阅者
     image_sub = create_subscription<sensor_msgs::msg::Image>(

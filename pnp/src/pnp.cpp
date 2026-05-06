@@ -18,7 +18,7 @@ namespace {
     constexpr double          kRadToDeg = 57.29577951308232;
     constexpr const char*     kPolarTopic = "pnp/polar";
     constexpr const char*     kAutoaimTopic = "/autoaim/target";
-    constexpr const char*     kBoxesTopic = "detect/boxes";
+    constexpr const char*     kBoxesTopic = "model_detecter/boxes";
     constexpr const char*     kCameraInfoTopic = "camera_info";
     constexpr const char*     kAutoaimStatusTopic = "/autoaim/status";
 

@@ -42,7 +42,8 @@ enable_language(CUDA)
 include(${PROJECT_SOURCE_DIR}/cmake/modules/libnvinferConfig.cmake)
 
 include_directories(
-  "detect/include"
+  "drone_detecter/include"
+  "model_detecter/include"
   "infer/include"
   "pnp/include"
 )
@@ -69,9 +70,9 @@ target_compile_options(${DRONE_INFER} PRIVATE
   $<$<COMPILE_LANGUAGE:CUDA>:-D_FORTIFY_SOURCE=0>
 )
 
-# detect_node 通过本包 infer 目录复用 TensorRT 推理封装。
+# model_detecter_node 通过本包 infer 目录复用 TensorRT 推理封装。
 set(DRONE_DETECT "drone_detect")
-file(GLOB_RECURSE DRONE_DETECT_SRCS "detect/src/*.cpp")
+file(GLOB_RECURSE DRONE_DETECT_SRCS "model_detecter/src/*.cpp")
 
 ament_auto_add_library(${DRONE_DETECT} SHARED
   ${DRONE_DETECT_SRCS}
@@ -81,7 +82,22 @@ target_link_libraries(${DRONE_DETECT} ${DRONE_INFER})
 
 rclcpp_components_register_node(${DRONE_DETECT}
   PLUGIN "drone::detect::Detect"
-  EXECUTABLE detect_node
+  EXECUTABLE model_detecter_node
+)
+
+# drone_detecter_node 用于后续接入另一个相机的目标引导检测。
+set(DRONE_DRONE_DETECTER "drone_drone_detecter")
+file(GLOB_RECURSE DRONE_DRONE_DETECTER_SRCS "drone_detecter/src/*.cpp")
+
+ament_auto_add_library(${DRONE_DRONE_DETECTER} SHARED
+  ${DRONE_DRONE_DETECTER_SRCS}
+)
+
+target_link_libraries(${DRONE_DRONE_DETECTER} ${DRONE_INFER})
+
+rclcpp_components_register_node(${DRONE_DRONE_DETECTER}
+  PLUGIN "drone::drone_detecter::DroneDetecterNode"
+  EXECUTABLE drone_detecter_node
 )
 
 # pnp_node 只依赖 ROS/OpenCV 依赖，用于几何解算和消息转换。
