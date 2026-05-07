@@ -15,12 +15,12 @@ namespace {
     constexpr size_t kDetectionStride = 9U;
     constexpr size_t kPairResultIndex = 8U;
     // 弧度转角度系数
-    constexpr double          kRadToDeg = 57.29577951308232;
-    constexpr const char*     kPolarTopic = "pnp/polar";
-    constexpr const char*     kAutoaimTopic = "/autoaim/target";
-    constexpr const char*     kBoxesTopic = "model_detecter/boxes";
-    constexpr const char*     kCameraInfoTopic = "camera_info";
-    constexpr const char*     kAutoaimStatusTopic = "/autoaim/status";
+    constexpr double      kRadToDeg = 57.29577951308232;
+    constexpr const char* kPolarTopic = "pnp/polar";
+    constexpr const char* kAutoaimTopic = "/autoaim/target";
+    constexpr const char* kBoxesTopic = "model_detecter/boxes";
+    constexpr const char* kCameraInfoTopic = "camera_info";
+    constexpr const char* kAutoaimStatusTopic = "/autoaim/status";
 
 }  // namespace
 
@@ -29,23 +29,24 @@ PnpNode::PnpNode(const rclcpp::NodeOptions& options)
 {
     // pnp发布器
     polar_pub_ =
-        create_publisher<base_interface::msg::Polar3f>(kPolarTopic, 10);
+        create_publisher<base_interface::msg::Polar3f>("pnp/polar", 10);
     // autoaim发布器
     autoaim_pub_ =
-        create_publisher<gary_msgs::msg::AutoAIM>(kAutoaimTopic, 10);
+        create_publisher<gary_msgs::msg::AutoAIM>("/autoaim/target", 10);
     // 检测框话题订阅器
     boxes_sub_ = create_subscription<std_msgs::msg::Float32MultiArray>(
-        kBoxesTopic, rclcpp::SensorDataQoS(),
+        "model_detecter/boxes", rclcpp::SensorDataQoS(),
         std::bind(&PnpNode::boxesCallback, this, std::placeholders::_1));
     // 相机内参话题订阅器
     camera_info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
-        kCameraInfoTopic, rclcpp::SensorDataQoS(),
+        "top/camera_info", rclcpp::SensorDataQoS(),
         std::bind(&PnpNode::cameraInfoCallback, this,
                   std::placeholders::_1));
     if (use_autoaim_status_) {
         // 云台当前状态订阅器
         autoaim_status_sub_ = create_subscription<gary_msgs::msg::AutoAIM>(
-            kAutoaimStatusTopic, rclcpp::SensorDataQoS(),
+            "/autoaim/status", rclcpp::SensorDataQoS(),
+
             std::bind(&PnpNode::autoaimStatusCallback, this,
                       std::placeholders::_1));
     }
@@ -96,12 +97,10 @@ bool PnpNode::solveBox(const std_msgs::msg::Float32MultiArray& msg,
     if (pair_result == 3.0F) {
         target_width_m = target_3_width_m_;
         target_height_m = target_3_height_m_;
-    }
-    else if (pair_result == 4.0F) {
+    } else if (pair_result == 4.0F) {
         target_width_m = target_4_width_m_;
         target_height_m = target_4_height_m_;
-    }
-    else {
+    } else {
         return false;
     }
 
@@ -114,11 +113,10 @@ bool PnpNode::solveBox(const std_msgs::msg::Float32MultiArray& msg,
                                                  {half_w, half_h, 0.0F},
                                                  {-half_w, half_h, 0.0F}};
     // 定义图像上的四个角点
-    const std::vector<cv::Point2f> image_points{
-        {msg.data[0], msg.data[1]},
-        {msg.data[2], msg.data[3]},
-        {msg.data[4], msg.data[5]},
-        {msg.data[6], msg.data[7]}};
+    const std::vector<cv::Point2f> image_points{{msg.data[0], msg.data[1]},
+                                                {msg.data[2], msg.data[3]},
+                                                {msg.data[4], msg.data[5]},
+                                                {msg.data[6], msg.data[7]}};
 
     cv::Vec3d rvec;
     // pnp解算

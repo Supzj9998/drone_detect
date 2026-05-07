@@ -46,6 +46,7 @@ include_directories(
   "model_detecter/include"
   "infer/include"
   "pnp/include"
+  "guide_manager/include"
 )
 
 set(DRONE_INFER "drone_infer")
@@ -68,6 +69,11 @@ target_link_libraries(${DRONE_INFER}
 target_compile_options(${DRONE_INFER} PRIVATE
   $<$<COMPILE_LANGUAGE:CUDA>:-U_FORTIFY_SOURCE>
   $<$<COMPILE_LANGUAGE:CUDA>:-D_FORTIFY_SOURCE=0>
+)
+install(TARGETS ${DRONE_INFER}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
 # model_detecter_node 通过本包 infer 目录复用 TensorRT 推理封装。
@@ -111,6 +117,19 @@ ament_auto_add_library(${DRONE_PNP} SHARED
 rclcpp_components_register_node(${DRONE_PNP}
   PLUGIN "drone::pnp::PnpNode"
   EXECUTABLE pnp_node
+)
+
+# guide_manager_node 用于把固定广角相机的引导角转换为云台目标角。
+set(DRONE_GUIDE_MANAGER "drone_guide_manager")
+file(GLOB_RECURSE DRONE_GUIDE_MANAGER_SRCS "guide_manager/src/*.cpp")
+
+ament_auto_add_library(${DRONE_GUIDE_MANAGER} SHARED
+  ${DRONE_GUIDE_MANAGER_SRCS}
+)
+
+rclcpp_components_register_node(${DRONE_GUIDE_MANAGER}
+  PLUGIN "drone::guide_manager::GuideManagerNode"
+  EXECUTABLE guide_manager_node
 )
 
 ament_auto_package(

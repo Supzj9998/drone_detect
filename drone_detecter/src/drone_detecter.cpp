@@ -16,8 +16,10 @@ DroneDetecterNode::DroneDetecterNode(const rclcpp::NodeOptions& options)
     : Node("drone_detecter_node", options)
 {
     const auto engine_path =
-        declare_parameter<std::string>("engine_path", "");
-    const auto model_path = declare_parameter<std::string>("model_path", "");
+        declare_parameter<std::string>("engine_path",
+                                       "model/TensorRT/drone.engine");
+    const auto model_path =
+        declare_parameter<std::string>("model_path", "model/ONNX/drone.onnx");
     const auto workspace_size_mb =
         declare_parameter<int>("trt_workspace_size_mb", 1024);
     guide_yaw_offset_rad_ =

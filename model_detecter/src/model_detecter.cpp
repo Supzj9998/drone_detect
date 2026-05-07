@@ -21,9 +21,9 @@ Detect::Detect(const rclcpp::NodeOptions& options)
 {
     // 读取参数和模型路径
     const auto engine_path = declare_parameter<std::string>(
-        "engine_path", "model/TensorRT/best.engine");
+        "engine_path", "model/TensorRT/model.engine");
     const auto model_path = declare_parameter<std::string>(
-        "model_path", "model/ONNX/best.onnx");
+        "model_path", "model/ONNX/model.onnx");
     // 读取TensorRT构建engine使用的workspace大小
     const auto workspace_size_mb =
         declare_parameter<int>("trt_workspace_size_mb", 1024);
