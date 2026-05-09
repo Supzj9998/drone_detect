@@ -1,21 +1,20 @@
-#ifndef DRONE_PNP__PNP_H_
-#define DRONE_PNP__PNP_H_
+#ifndef DRONE_DETECT_MODEL_PNP_H
+#define DRONE_DETECT_MODEL_PNP_H
 
 #include <cstddef>
 #include <mutex>
-#include "base_interface/msg/polar3f.hpp"
 #include "gary_msgs/msg/auto_aim.hpp"
 #include "opencv2/core.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "std_msgs/msg/float32_multi_array.hpp"
 
-namespace drone::pnp {
+namespace drone::model_pnp {
 
-class PnpNode : public rclcpp::Node {
+class ModelPnpNode : public rclcpp::Node {
 public:
     // 构造函数
-    explicit PnpNode(const rclcpp::NodeOptions& options);
+    explicit ModelPnpNode(const rclcpp::NodeOptions& options);
 
 private:
     // 本帧pnp所需快照
@@ -56,8 +55,6 @@ private:
     // 相机参数订阅器
     rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr
         camera_info_sub_;
-    // 极坐标结果发布器
-    rclcpp::Publisher<base_interface::msg::Polar3f>::SharedPtr polar_pub_;
     // 下位机发布器
     rclcpp::Publisher<gary_msgs::msg::AutoAIM>::SharedPtr autoaim_pub_;
 
@@ -74,8 +71,6 @@ private:
     bool require_autoaim_status_ = true;
     // 是否允许发射
     bool allow_shoot_ = false;
-    // 控制发布yaw/pitch的单位，true:角度制，false:弧度制
-    bool output_in_degrees_ = true;
     // 表示输入检测框来自的图像是否已经去畸变
     bool input_is_undistorted_ = false;
     // 有没有相机内参
@@ -93,6 +88,6 @@ private:
     float current_yaw_rad_ = 0.0F;
 };
 
-}  // namespace drone::pnp
+}  // namespace drone::model_pnp
 
-#endif  // DRONE_PNP__PNP_H_
+#endif  // DRONE_DETECT_MODEL_PNP_H

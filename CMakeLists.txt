@@ -42,11 +42,12 @@ enable_language(CUDA)
 include(${PROJECT_SOURCE_DIR}/cmake/modules/libnvinferConfig.cmake)
 
 include_directories(
+  "autoaim_manager/include"
   "drone_detecter/include"
+  "drone_pnp/include"
   "model_detecter/include"
   "infer/include"
-  "pnp/include"
-  "guide_manager/include"
+  "model_pnp/include"
 )
 
 set(DRONE_INFER "drone_infer")
@@ -106,30 +107,43 @@ rclcpp_components_register_node(${DRONE_DRONE_DETECTER}
   EXECUTABLE drone_detecter_node
 )
 
-# pnp_node 只依赖 ROS/OpenCV 依赖，用于几何解算和消息转换。
-set(DRONE_PNP "drone_pnp")
-file(GLOB_RECURSE DRONE_PNP_SRCS "pnp/src/*.cpp")
+# drone_pnp_node 接收无人机检测框，后续用于无人机粗略PnP。
+set(DRONE_DRONE_PNP "drone_drone_pnp")
+file(GLOB_RECURSE DRONE_DRONE_PNP_SRCS "drone_pnp/src/*.cpp")
 
-ament_auto_add_library(${DRONE_PNP} SHARED
-  ${DRONE_PNP_SRCS}
+ament_auto_add_library(${DRONE_DRONE_PNP} SHARED
+  ${DRONE_DRONE_PNP_SRCS}
 )
 
-rclcpp_components_register_node(${DRONE_PNP}
-  PLUGIN "drone::pnp::PnpNode"
-  EXECUTABLE pnp_node
+rclcpp_components_register_node(${DRONE_DRONE_PNP}
+  PLUGIN "drone::drone_pnp::DronePnpNode"
+  EXECUTABLE drone_pnp_node
 )
 
-# guide_manager_node 用于把固定广角相机的引导角转换为云台目标角。
-set(DRONE_GUIDE_MANAGER "drone_guide_manager")
-file(GLOB_RECURSE DRONE_GUIDE_MANAGER_SRCS "guide_manager/src/*.cpp")
+# model_pnp_node 只依赖 ROS/OpenCV 依赖，用于几何解算和消息转换。
+set(DRONE_MODEL_PNP "drone_model_pnp")
+file(GLOB_RECURSE DRONE_MODEL_PNP_SRCS "model_pnp/src/*.cpp")
 
-ament_auto_add_library(${DRONE_GUIDE_MANAGER} SHARED
-  ${DRONE_GUIDE_MANAGER_SRCS}
+ament_auto_add_library(${DRONE_MODEL_PNP} SHARED
+  ${DRONE_MODEL_PNP_SRCS}
 )
 
-rclcpp_components_register_node(${DRONE_GUIDE_MANAGER}
-  PLUGIN "drone::guide_manager::GuideManagerNode"
-  EXECUTABLE guide_manager_node
+rclcpp_components_register_node(${DRONE_MODEL_PNP}
+  PLUGIN "drone::model_pnp::ModelPnpNode"
+  EXECUTABLE model_pnp_node
+)
+
+# autoaim_manager_node 管理无人机和模型两路AutoAIM目标来源。
+set(DRONE_AUTOAIM_MANAGER "drone_autoaim_manager")
+file(GLOB_RECURSE DRONE_AUTOAIM_MANAGER_SRCS "autoaim_manager/src/*.cpp")
+
+ament_auto_add_library(${DRONE_AUTOAIM_MANAGER} SHARED
+  ${DRONE_AUTOAIM_MANAGER_SRCS}
+)
+
+rclcpp_components_register_node(${DRONE_AUTOAIM_MANAGER}
+  PLUGIN "drone::autoaim_manager::AutoaimManagerNode"
+  EXECUTABLE autoaim_manager_node
 )
 
 ament_auto_package(

@@ -1,4 +1,4 @@
-#include "pnp.h"
+#include "model_pnp.h"
 
 #include <algorithm>
 #include <cmath>
@@ -9,51 +9,45 @@
 #include "opencv2/calib3d.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
 
-namespace drone::pnp {
+namespace drone::model_pnp {
 namespace {
-    // detect发布4个pnp点和1个配对结果，共9个float
+    // model_detecter发布4个model_pnp点和1个配对结果，共9个float
     constexpr size_t kDetectionStride = 9U;
     constexpr size_t kPairResultIndex = 8U;
-    // 弧度转角度系数
-    constexpr double      kRadToDeg = 57.29577951308232;
-    constexpr const char* kPolarTopic = "pnp/polar";
-    constexpr const char* kAutoaimTopic = "/autoaim/target";
+    constexpr const char* kAutoaimTopic = "/autoaim/model";
     constexpr const char* kBoxesTopic = "model_detecter/boxes";
     constexpr const char* kCameraInfoTopic = "camera_info";
     constexpr const char* kAutoaimStatusTopic = "/autoaim/status";
 
 }  // namespace
 
-PnpNode::PnpNode(const rclcpp::NodeOptions& options)
-    : Node("pnp_node", options)
+ModelPnpNode::ModelPnpNode(const rclcpp::NodeOptions& options)
+    : Node("model_pnp_node", options)
 {
-    // pnp发布器
-    polar_pub_ =
-        create_publisher<base_interface::msg::Polar3f>("pnp/polar", 10);
     // autoaim发布器
     autoaim_pub_ =
-        create_publisher<gary_msgs::msg::AutoAIM>("/autoaim/target", 10);
+        create_publisher<gary_msgs::msg::AutoAIM>(kAutoaimTopic, 10);
     // 检测框话题订阅器
     boxes_sub_ = create_subscription<std_msgs::msg::Float32MultiArray>(
         "model_detecter/boxes", rclcpp::SensorDataQoS(),
-        std::bind(&PnpNode::boxesCallback, this, std::placeholders::_1));
+        std::bind(&ModelPnpNode::boxesCallback, this, std::placeholders::_1));
     // 相机内参话题订阅器
     camera_info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
         "top/camera_info", rclcpp::SensorDataQoS(),
-        std::bind(&PnpNode::cameraInfoCallback, this,
+        std::bind(&ModelPnpNode::cameraInfoCallback, this,
                   std::placeholders::_1));
     if (use_autoaim_status_) {
         // 云台当前状态订阅器
         autoaim_status_sub_ = create_subscription<gary_msgs::msg::AutoAIM>(
             "/autoaim/status", rclcpp::SensorDataQoS(),
 
-            std::bind(&PnpNode::autoaimStatusCallback, this,
+            std::bind(&ModelPnpNode::autoaimStatusCallback, this,
                       std::placeholders::_1));
     }
 }
 
 // 检测框回调
-void PnpNode::boxesCallback(
+void ModelPnpNode::boxesCallback(
     const std_msgs::msg::Float32MultiArray::SharedPtr msg)
 {
     SolverState state;
@@ -66,7 +60,7 @@ void PnpNode::boxesCallback(
     publishResult(tvec, state);
 }
 
-bool PnpNode::getSolverState(SolverState& state) const
+bool ModelPnpNode::getSolverState(SolverState& state) const
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!camera_info_ready_ || camera_matrix_.empty() ||
@@ -82,8 +76,8 @@ bool PnpNode::getSolverState(SolverState& state) const
     return true;
 }
 
-// 用detect发布的4个角点做pnp
-bool PnpNode::solveBox(const std_msgs::msg::Float32MultiArray& msg,
+// 用model_detecter发布的4个角点做model_pnp
+bool ModelPnpNode::solveBox(const std_msgs::msg::Float32MultiArray& msg,
                        const SolverState& state, cv::Vec3d& tvec) const
 {
     if (msg.data.size() != kDetectionStride ||
@@ -119,7 +113,7 @@ bool PnpNode::solveBox(const std_msgs::msg::Float32MultiArray& msg,
                                                 {msg.data[6], msg.data[7]}};
 
     cv::Vec3d rvec;
-    // pnp解算
+    // model_pnp解算
     if (!cv::solvePnP(object_points, image_points, state.camera_matrix,
                       state.dist_coeffs, rvec, tvec, false,
                       cv::SOLVEPNP_ITERATIVE)) {
@@ -129,7 +123,7 @@ bool PnpNode::solveBox(const std_msgs::msg::Float32MultiArray& msg,
 }
 
 // 发布消息
-void PnpNode::publishResult(const cv::Vec3d& tvec, const SolverState& state)
+void ModelPnpNode::publishResult(const cv::Vec3d& tvec, const SolverState& state)
 {
     // 把三维坐标转成角度距离并发布
     const double x = tvec[0];
@@ -140,21 +134,6 @@ void PnpNode::publishResult(const cv::Vec3d& tvec, const SolverState& state)
     const double distance = std::sqrt(x * x + y * y + z * z);
     const double base_yaw = -std::atan2(x, z);
     const double base_pitch = -std::atan2(-y, std::sqrt(x * x + z * z));
-    double       yaw = base_yaw;
-    double       pitch = base_pitch;
-    // 启用云台状态就叠加云台角
-    if (use_autoaim_status_) {
-        yaw += state.yaw;
-        pitch += state.pitch;
-    }
-    // 创建并发布极坐标消息
-    base_interface::msg::Polar3f polar;
-    polar.yaw =
-        static_cast<float>(output_in_degrees_ ? yaw * kRadToDeg : yaw);
-    polar.pitch =
-        static_cast<float>(output_in_degrees_ ? pitch * kRadToDeg : pitch);
-    polar.distance = static_cast<float>(distance);
-    polar_pub_->publish(polar);
     // AutoAIM keeps radians and preserves the previous doubled visual-angle
     // convention.
     if (autoaim_pub_) {
@@ -162,9 +141,9 @@ void PnpNode::publishResult(const cv::Vec3d& tvec, const SolverState& state)
         gary_msgs::msg::AutoAIM autoaim;
         autoaim.header.stamp = get_clock()->now();
         autoaim.yaw = static_cast<float>(
-            base_yaw * 2.0 + (use_autoaim_status_ ? state.yaw : 0.0F));
+            base_yaw + (use_autoaim_status_ ? state.yaw : 0.0F));
         autoaim.pitch = static_cast<float>(
-            base_pitch * 2.0 + (use_autoaim_status_ ? state.pitch : 0.0F));
+            base_pitch + (use_autoaim_status_ ? state.pitch : 0.0F));
         autoaim.target_id =
             static_cast<uint8_t>(std::clamp(autoaim_target_id_, 0, 7));
         autoaim.target_distance = static_cast<float>(distance);
@@ -177,7 +156,7 @@ void PnpNode::publishResult(const cv::Vec3d& tvec, const SolverState& state)
     }
 }
 
-void PnpNode::autoaimStatusCallback(
+void ModelPnpNode::autoaimStatusCallback(
     const gary_msgs::msg::AutoAIM::SharedPtr msg)
 {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -185,7 +164,7 @@ void PnpNode::autoaimStatusCallback(
     current_yaw_rad_ = msg->yaw;
     autoaim_status_ready_ = true;
 }
-void PnpNode::cameraInfoCallback(
+void ModelPnpNode::cameraInfoCallback(
     const sensor_msgs::msg::CameraInfo::SharedPtr msg)
 {
     if (msg->k[0] <= 0.0 || msg->k[4] <= 0.0) {
@@ -208,6 +187,6 @@ void PnpNode::cameraInfoCallback(
     camera_info_ready_ = true;
 }
 
-}  // namespace drone::pnp
+}  // namespace drone::model_pnp
 
-RCLCPP_COMPONENTS_REGISTER_NODE(drone::pnp::PnpNode)
+RCLCPP_COMPONENTS_REGISTER_NODE(drone::model_pnp::ModelPnpNode)

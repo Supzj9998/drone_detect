@@ -294,18 +294,18 @@ std::array<float, 9> Detect::processDetections(
 
     const cv::Point2f roi_offset(static_cast<float>(roi_rect.x),
                                  static_cast<float>(roi_rect.y));
-    std::array<cv::Point2f, 4> pnp_points{
+    std::array<cv::Point2f, 4> model_pnp_points{
         left_points[0] + roi_offset, right_points[0] + roi_offset,
         right_points[1] + roi_offset, left_points[1] + roi_offset};
 
-    result[0] = pnp_points[0].x;
-    result[1] = pnp_points[0].y;
-    result[2] = pnp_points[1].x;
-    result[3] = pnp_points[1].y;
-    result[4] = pnp_points[2].x;
-    result[5] = pnp_points[2].y;
-    result[6] = pnp_points[3].x;
-    result[7] = pnp_points[3].y;
+    result[0] = model_pnp_points[0].x;
+    result[1] = model_pnp_points[0].y;
+    result[2] = model_pnp_points[1].x;
+    result[3] = model_pnp_points[1].y;
+    result[4] = model_pnp_points[2].x;
+    result[5] = model_pnp_points[2].y;
+    result[6] = model_pnp_points[3].x;
+    result[7] = model_pnp_points[3].y;
     result[8] = pair_result;
     return result;
 }
@@ -316,7 +316,7 @@ void Detect::publishDetections(const std::array<float, 9>& detection) const
     std_msgs::msg::Float32MultiArray msg;
     // 提前预留容量
     msg.data.reserve(detection.size());
-    // 传统视觉处理后的pnp点和配对结果转换ros2消息
+    // 传统视觉处理后的model_pnp点和配对结果转换ros2消息
     msg.data.insert(msg.data.end(), detection.begin(), detection.end());
 
     // 发布消息

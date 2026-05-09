@@ -1,7 +1,6 @@
 #include "drone_detecter.h"
 
 #include <algorithm>
-#include <cmath>
 #include <functional>
 #include <stdexcept>
 #include <string>
@@ -22,10 +21,6 @@ DroneDetecterNode::DroneDetecterNode(const rclcpp::NodeOptions& options)
         declare_parameter<std::string>("model_path", "model/ONNX/drone.onnx");
     const auto workspace_size_mb =
         declare_parameter<int>("trt_workspace_size_mb", 1024);
-    guide_yaw_offset_rad_ =
-        declare_parameter<double>("guide_yaw_offset_rad", 0.0);
-    guide_pitch_offset_rad_ =
-        declare_parameter<double>("guide_pitch_offset_rad", 0.0);
 
     if (!engine_path.empty() && !model_path.empty()) {
         const auto yolo_type = ::yolo::Type::V11;
@@ -51,12 +46,8 @@ DroneDetecterNode::DroneDetecterNode(const rclcpp::NodeOptions& options)
         "camera_image", rclcpp::SensorDataQoS(),
         std::bind(&DroneDetecterNode::imageCallback, this,
                   std::placeholders::_1));
-    camera_info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
-        "camera_info", rclcpp::SensorDataQoS(),
-        std::bind(&DroneDetecterNode::cameraInfoCallback, this,
-                  std::placeholders::_1));
-    guide_pub_ = create_publisher<base_interface::msg::Polar3f>(
-        "drone_detecter/guide_polar", 10);
+    boxes_pub_ = create_publisher<std_msgs::msg::Float32MultiArray>(
+        "drone_detecter/boxes", 10);
 }
 
 void DroneDetecterNode::imageCallback(
@@ -66,6 +57,7 @@ void DroneDetecterNode::imageCallback(
         return;
     }
 
+    // ros2消息转opencv矩阵
     cv_bridge::CvImagePtr cv_ptr;
     try {
         cv_ptr =
@@ -79,36 +71,15 @@ void DroneDetecterNode::imageCallback(
 
     tdt_radar::Image image(cv_ptr->image.data, cv_ptr->image.cols,
                            cv_ptr->image.rows);
+    // yolo推理
     const auto detections = yolo_->forward(image);
+    // 对所有框筛选颜色和置信度
     const auto filtered_detections =
         filterDetectionsByColor(cv_ptr->image, detections);
     if (filtered_detections.empty()) {
         return;
     }
-
-    double fx = 0.0;
-    double fy = 0.0;
-    double cx = 0.0;
-    double cy = 0.0;
-    if (!getCameraIntrinsics(fx, fy, cx, cy)) {
-        return;
-    }
-    publishGuideTarget(filtered_detections.front(), fx, fy, cx, cy);
-}
-
-void DroneDetecterNode::cameraInfoCallback(
-    const sensor_msgs::msg::CameraInfo::SharedPtr msg)
-{
-    if (msg->k[0] <= 0.0 || msg->k[4] <= 0.0) {
-        return;
-    }
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    camera_fx_ = msg->k[0];
-    camera_fy_ = msg->k[4];
-    camera_cx_ = msg->k[2];
-    camera_cy_ = msg->k[5];
-    camera_info_ready_ = true;
+    publishDetections(filtered_detections);
 }
 
 yolo::BoxArray DroneDetecterNode::filterDetectionsByColor(
@@ -167,39 +138,18 @@ yolo::BoxArray DroneDetecterNode::filterDetectionsByColor(
     return filtered;
 }
 
-bool DroneDetecterNode::getCameraIntrinsics(double& fx, double& fy,
-                                            double& cx, double& cy) const
+void DroneDetecterNode::publishDetections(
+    const yolo::BoxArray& detections) const
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!camera_info_ready_ || camera_fx_ <= 0.0 || camera_fy_ <= 0.0) {
-        return false;
+    std_msgs::msg::Float32MultiArray msg;
+    msg.data.reserve(detections.size() * 6U);
+    for (const auto& box : detections) {
+        msg.data.insert(msg.data.end(),
+                        {static_cast<float>(box.class_label),
+                         box.confidence, box.left, box.top, box.right,
+                         box.bottom});
     }
-
-    fx = camera_fx_;
-    fy = camera_fy_;
-    cx = camera_cx_;
-    cy = camera_cy_;
-    return true;
-}
-
-void DroneDetecterNode::publishGuideTarget(const yolo::Box& box, double fx,
-                                           double fy, double cx,
-                                           double cy) const
-{
-    const double box_center_x =
-        (static_cast<double>(box.left) + static_cast<double>(box.right)) * 0.5;
-    const double box_center_y =
-        (static_cast<double>(box.top) + static_cast<double>(box.bottom)) * 0.5;
-    const double yaw =
-        std::atan2(box_center_x - cx, fx) + guide_yaw_offset_rad_;
-    const double pitch =
-        std::atan2(cy - box_center_y, fy) + guide_pitch_offset_rad_;
-
-    base_interface::msg::Polar3f guide;
-    guide.yaw = static_cast<float>(yaw);
-    guide.pitch = static_cast<float>(pitch);
-    guide.distance = 0.0F;
-    guide_pub_->publish(guide);
+    boxes_pub_->publish(msg);
 }
 
 }  // namespace drone::drone_detecter

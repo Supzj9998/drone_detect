@@ -37,34 +37,28 @@ def generate_launch_description() -> LaunchDescription:
         description="Enable model_detecter_node.",
     )
 
-    enable_guide_manager_arg = DeclareLaunchArgument(
-        "enable_guide_manager",
-        default_value="false",
-        description="Enable wide-camera guide manager publishing /autoaim/target.",
-    )
-
     enable_drone_detecter_arg = DeclareLaunchArgument(
         "enable_drone_detecter",
-        default_value="false",
-        description="Enable drone_detecter_node publishing drone_detecter/guide_polar.",
-    )
-
-    enable_pnp_arg = DeclareLaunchArgument(
-        "enable_pnp",
         default_value="true",
-        description="Enable pnp_node publishing pnp result and /autoaim/target.",
+        description="Enable drone_detecter_node publishing drone_detecter/boxes.",
     )
 
-    guide_yaw_offset_rad_arg = DeclareLaunchArgument(
-        "guide_yaw_offset_rad",
-        default_value="0.0",
-        description="Yaw offset added by guide_manager_node, in radians.",
+    enable_model_pnp_arg = DeclareLaunchArgument(
+        "enable_model_pnp",
+        default_value="true",
+        description="Enable model_pnp_node publishing /autoaim/model.",
     )
 
-    guide_pitch_offset_rad_arg = DeclareLaunchArgument(
-        "guide_pitch_offset_rad",
-        default_value="0.0",
-        description="Pitch offset added by guide_manager_node, in radians.",
+    enable_drone_pnp_arg = DeclareLaunchArgument(
+        "enable_drone_pnp",
+        default_value="true",
+        description="Enable drone_pnp_node publishing /autoaim/drone.",
+    )
+
+    enable_autoaim_manager_arg = DeclareLaunchArgument(
+        "enable_autoaim_manager",
+        default_value="true",
+        description="Enable autoaim_manager_node publishing /autoaim/target.",
     )
 
     # YOLO/TensorRT 检测节点：输入图像，输出带框图像和 Float32MultiArray 检测框。
@@ -84,16 +78,16 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
-    # PnP 节点：把检测框转换为目标三维方向/距离，并可发布 AutoAIM 消息。
-    pnp_node = Node(
+    # model_pnp 节点：把检测框转换为目标三维方向/距离，并可发布 AutoAIM 消息。
+    model_pnp_node = Node(
         package="drone_detect",
-        executable="pnp_node",
-        name="pnp_node",
+        executable="model_pnp_node",
+        name="model_pnp_node",
         output="screen",
-        condition=IfCondition(LaunchConfiguration("enable_pnp")),
+        condition=IfCondition(LaunchConfiguration("enable_model_pnp")),
     )
 
-    # 固定广角相机无人机检测节点：默认关闭，启用后发布 drone_detecter/guide_polar。
+    # 固定广角相机无人机检测节点：启用后发布筛选后的无人机YOLO框。
     drone_detecter_node = Node(
         package="drone_detect",
         executable="drone_detecter_node",
@@ -102,19 +96,22 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(LaunchConfiguration("enable_drone_detecter")),
     )
 
-    # 广角引导节点：默认关闭，避免和 pnp_node 同时发布 /autoaim/target。
-    guide_manager_node = Node(
+    # drone_pnp 节点：接收无人机YOLO框，输出无人机方向AutoAIM消息。
+    drone_pnp_node = Node(
         package="drone_detect",
-        executable="guide_manager_node",
-        name="guide_manager_node",
+        executable="drone_pnp_node",
+        name="drone_pnp_node",
         output="screen",
-        condition=IfCondition(LaunchConfiguration("enable_guide_manager")),
-        parameters=[
-            {
-                "yaw_offset_rad": LaunchConfiguration("guide_yaw_offset_rad"),
-                "pitch_offset_rad": LaunchConfiguration("guide_pitch_offset_rad"),
-            }
-        ],
+        condition=IfCondition(LaunchConfiguration("enable_drone_pnp")),
+    )
+
+    # autoaim_manager 节点：在模型目标和无人机目标之间选择最终/autoaim/target。
+    autoaim_manager_node = Node(
+        package="drone_detect",
+        executable="autoaim_manager_node",
+        name="autoaim_manager_node",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("enable_autoaim_manager")),
     )
 
     return LaunchDescription(
@@ -124,14 +121,14 @@ def generate_launch_description() -> LaunchDescription:
             trt_workspace_size_mb_arg,
             image_topic_arg,
             enable_model_detecter_arg,
-            enable_guide_manager_arg,
             enable_drone_detecter_arg,
-            enable_pnp_arg,
-            guide_yaw_offset_rad_arg,
-            guide_pitch_offset_rad_arg,
+            enable_model_pnp_arg,
+            enable_drone_pnp_arg,
+            enable_autoaim_manager_arg,
             model_detecter_node,
-            pnp_node,
+            model_pnp_node,
             drone_detecter_node,
-            guide_manager_node,
+            drone_pnp_node,
+            autoaim_manager_node,
         ]
     )
